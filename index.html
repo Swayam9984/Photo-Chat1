@@ -156,8 +156,6 @@
             font-weight: bold;
             color: var(--primary-color);
         }
-
-        /* Note: Zoom controls from previous step are removed as they are not part of this request */
     </style>
 </head>
 <body>
@@ -285,6 +283,7 @@
                 appView.classList.remove('hidden');
                 connectionStatus.textContent = `Connected to Peer: ${conn.peer}`;
                 connectionStatus.style.color = 'var(--secondary-color)';
+                // Re-enable button on new connection
                 sendPhotoBtn.disabled = false;
             });
             conn.on('data', (data) => {
@@ -338,18 +337,16 @@
         // 1. Start Camera
         startCameraBtn.addEventListener('click', async () => {
             try {
-                // --- CHANGE 1: REQUESTING HIGHER RESOLUTION ---
-                // We ask for an "ideal" 4K resolution. The browser will try to match this
-                // or provide the best possible resolution it can.
+                // --- CHANGE 1: OPTIMIZED RESOLUTION FOR MOBILE ---
+                // Requesting Full HD (1920x1080). It's high quality but much less demanding than 4K.
                 const constraints = {
                     video: {
                         facingMode: 'environment',
-                        width: { ideal: 4096 },
-                        height: { ideal: 2160 }
+                        width: { ideal: 1920 },
+                        height: { ideal: 1080 }
                     }
                 };
                 videoStream = await navigator.mediaDevices.getUserMedia(constraints);
-                // --- END OF CHANGE 1 ---
 
                 videoFeed.srcObject = videoStream;
                 videoFeed.classList.remove('hidden');
@@ -359,14 +356,13 @@
                 clickPhotoBtn.classList.remove('hidden');
             } catch (err) {
                 console.error("Camera Error:", err);
-                alert("Could not access camera. Please grant permission and try again. If the issue persists, your browser may not support high-resolution requests.");
+                alert("Could not access camera. Please grant permission and try again.");
             }
         });
         
         // 2. Click Photo
         clickPhotoBtn.addEventListener('click', () => {
             const context = photoCanvas.getContext('2d');
-            // The canvas size will be set to the actual resolution of the video stream
             photoCanvas.width = videoFeed.videoWidth;
             photoCanvas.height = videoFeed.videoHeight;
             context.drawImage(videoFeed, 0, 0, photoCanvas.width, photoCanvas.height);
@@ -385,19 +381,28 @@
                 alert("Not connected to a peer. Cannot send photo.");
                 return;
             }
-            
-            // --- CHANGE 2: SAVING SNAPSHOT AT MAXIMUM QUALITY ---
-            // We set the JPEG quality to 1.0 (100%) for maximum clarity.
-            // Be aware: This will create a larger file size to send.
-            const dataUrl = photoCanvas.toDataURL('image/jpeg', 1.0);
-            // --- END OF CHANGE 2 ---
 
-            conn.send(dataUrl);
+            // --- CHANGE 3: UI FEEDBACK TO PREVENT "HANG" PERCEPTION ---
+            sendPhotoBtn.disabled = true;
+            sendPhotoBtn.textContent = 'Processing...';
             
-            sendPhotoBtn.textContent = 'Sent!';
+            // We use a small timeout to allow the UI to update *before* the heavy processing starts.
             setTimeout(() => {
-                sendPhotoBtn.textContent = '3. Send Photo';
-            }, 2000);
+                // --- CHANGE 2: HIGH-QUALITY BUT FAST COMPRESSION ---
+                // 92% quality offers a great balance between clarity and performance.
+                const dataUrl = photoCanvas.toDataURL('image/jpeg', 0.92);
+
+                conn.send(dataUrl);
+                
+                sendPhotoBtn.textContent = 'Sent!';
+                setTimeout(() => {
+                    sendPhotoBtn.textContent = '3. Send Photo';
+                    // Only re-enable the button if still connected
+                    if(conn && conn.open) {
+                        sendPhotoBtn.disabled = false;
+                    }
+                }, 2000);
+            }, 50); // 50ms delay
         });
 
         // Retake Photo
