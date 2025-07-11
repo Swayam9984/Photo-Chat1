@@ -157,16 +157,7 @@
             color: var(--primary-color);
         }
 
-        #zoom-controls {
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            gap: 10px;
-        }
-        #zoom-slider {
-             width: 60%;
-        }
+        /* Note: Zoom controls from previous step are removed as they are not part of this request */
     </style>
 </head>
 <body>
@@ -193,13 +184,6 @@
                 <video id="video-feed" autoplay playsinline class="hidden"></video>
                 <canvas id="photo-canvas" class="hidden"></canvas>
             </div>
-
-            <!-- ZOOM CONTROLS - NEW -->
-            <div id="zoom-controls" class="hidden">
-                <label for="zoom-slider">Zoom</label>
-                <input type="range" id="zoom-slider">
-            </div>
-
             <div id="sender-controls">
                 <button id="start-camera-btn">1. Start Camera</button>
                 <button id="click-photo-btn" class="hidden">2. Click Photo</button>
@@ -248,8 +232,6 @@
         const sendPhotoBtn = document.getElementById('send-photo-btn');
         const retakePhotoBtn = document.getElementById('retake-photo-btn');
         const disconnectBtn = document.getElementById('disconnect-btn');
-        const zoomControls = document.getElementById('zoom-controls'); // New
-        const zoomSlider = document.getElementById('zoom-slider');   // New
         
         // Receiver elements
         const receiverSection = document.getElementById('receiver-section');
@@ -261,21 +243,16 @@
         // --- ROOM MANAGEMENT ---
         
         createRoomBtn.addEventListener('click', () => {
-            // Generate a random, simple room ID
             const roomId = `room-${Math.random().toString(36).substr(2, 6)}`;
             peer = new Peer(roomId);
-            
             roomStatus.textContent = `Creating room...`;
-
             peer.on('open', (id) => {
                 roomStatus.innerHTML = `<b>Room Created!</b><br>Your Room ID is: <b style="color: #28a745;">${id}</b><br>Share it with a friend and wait for them to join.`;
             });
-
             peer.on('connection', (newConnection) => {
                 conn = newConnection;
                 initializeConnection();
             });
-            
             peer.on('error', (err) => {
                 alert('An error occurred with PeerJS: ' + err);
                 resetToRoomView();
@@ -288,17 +265,12 @@
                 alert('Please enter a Room ID to join.');
                 return;
             }
-            
-            // Create a peer with a random ID
             peer = new Peer();
-            
             roomStatus.textContent = 'Joining room...';
-            
             peer.on('open', () => {
                 conn = peer.connect(roomId);
                 initializeConnection();
             });
-            
             peer.on('error', (err) => {
                 alert('An error occurred with PeerJS: ' + err);
                 resetToRoomView();
@@ -309,27 +281,19 @@
 
         function initializeConnection() {
             conn.on('open', () => {
-                // Switch views
                 roomView.classList.add('hidden');
                 appView.classList.remove('hidden');
-                
-                // Update UI
                 connectionStatus.textContent = `Connected to Peer: ${conn.peer}`;
                 connectionStatus.style.color = 'var(--secondary-color)';
                 sendPhotoBtn.disabled = false;
             });
-            
             conn.on('data', (data) => {
-                // This is where the image data is received
                 console.log('Data received!');
                 receiverSection.classList.remove('hidden');
                 receivedPhotoContainer.querySelector('p').classList.add('hidden');
-                
                 receivedImage.src = data;
                 receivedImage.classList.remove('hidden');
-                
-                // Create or update download link
-                downloadContainer.innerHTML = ''; // Clear previous link
+                downloadContainer.innerHTML = '';
                 const a = document.createElement('a');
                 a.href = data;
                 a.download = `shared-photo-${Date.now()}.jpg`;
@@ -337,7 +301,6 @@
                 a.textContent = 'Download Photo';
                 downloadContainer.appendChild(a);
             });
-            
             conn.on('close', () => {
                 alert('Connection has been closed.');
                 resetToRoomView();
@@ -358,7 +321,6 @@
             appView.classList.add('hidden');
             roomIdInput.value = '';
             roomStatus.textContent = '';
-            // Also reset the app view state
             if (videoStream) {
                 videoStream.getTracks().forEach(track => track.stop());
             }
@@ -369,7 +331,6 @@
             videoFeed.classList.add('hidden');
             photoCanvas.classList.add('hidden');
             receiverSection.classList.add('hidden');
-            zoomControls.classList.add('hidden'); // New
         }
 
         // --- CAMERA & SENDING LOGIC ---
@@ -377,44 +338,35 @@
         // 1. Start Camera
         startCameraBtn.addEventListener('click', async () => {
             try {
-                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                // --- CHANGE 1: REQUESTING HIGHER RESOLUTION ---
+                // We ask for an "ideal" 4K resolution. The browser will try to match this
+                // or provide the best possible resolution it can.
+                const constraints = {
+                    video: {
+                        facingMode: 'environment',
+                        width: { ideal: 4096 },
+                        height: { ideal: 2160 }
+                    }
+                };
+                videoStream = await navigator.mediaDevices.getUserMedia(constraints);
+                // --- END OF CHANGE 1 ---
+
                 videoFeed.srcObject = videoStream;
                 videoFeed.classList.remove('hidden');
                 photoCanvas.classList.add('hidden');
                 
                 startCameraBtn.classList.add('hidden');
                 clickPhotoBtn.classList.remove('hidden');
-                
-                // --- ZOOM FUNCTIONALITY ---
-                const track = videoStream.getVideoTracks()[0];
-                const capabilities = track.getCapabilities();
-
-                // Check if the camera supports zoom
-                if ('zoom' in capabilities) {
-                    zoomControls.classList.remove('hidden');
-                    
-                    // Set slider min, max, step, and value from the camera's capabilities
-                    zoomSlider.min = capabilities.zoom.min;
-                    zoomSlider.max = capabilities.zoom.max;
-                    zoomSlider.step = capabilities.zoom.step;
-                    zoomSlider.value = capabilities.zoom.min; // Start with no zoom
-
-                    // Add event listener to apply zoom when slider changes
-                    zoomSlider.addEventListener('input', () => {
-                        track.applyConstraints({ advanced: [{ zoom: zoomSlider.value }] });
-                    });
-                } else {
-                    console.log('Zoom is not supported on this device.');
-                }
             } catch (err) {
                 console.error("Camera Error:", err);
-                alert("Could not access camera. Please grant permission and try again.");
+                alert("Could not access camera. Please grant permission and try again. If the issue persists, your browser may not support high-resolution requests.");
             }
         });
         
         // 2. Click Photo
         clickPhotoBtn.addEventListener('click', () => {
             const context = photoCanvas.getContext('2d');
+            // The canvas size will be set to the actual resolution of the video stream
             photoCanvas.width = videoFeed.videoWidth;
             photoCanvas.height = videoFeed.videoHeight;
             context.drawImage(videoFeed, 0, 0, photoCanvas.width, photoCanvas.height);
@@ -425,7 +377,6 @@
             clickPhotoBtn.classList.add('hidden');
             sendPhotoBtn.classList.remove('hidden');
             retakePhotoBtn.classList.remove('hidden');
-            zoomControls.classList.add('hidden'); // New: Hide zoom slider after taking photo
         });
         
         // 3. Send Photo
@@ -435,12 +386,14 @@
                 return;
             }
             
-            // Get image data as a Data URL (jpeg for smaller size)
-            const dataUrl = photoCanvas.toDataURL('image/jpeg', 0.85);
+            // --- CHANGE 2: SAVING SNAPSHOT AT MAXIMUM QUALITY ---
+            // We set the JPEG quality to 1.0 (100%) for maximum clarity.
+            // Be aware: This will create a larger file size to send.
+            const dataUrl = photoCanvas.toDataURL('image/jpeg', 1.0);
+            // --- END OF CHANGE 2 ---
 
             conn.send(dataUrl);
             
-            // Provide feedback
             sendPhotoBtn.textContent = 'Sent!';
             setTimeout(() => {
                 sendPhotoBtn.textContent = '3. Send Photo';
@@ -455,14 +408,6 @@
             clickPhotoBtn.classList.remove('hidden');
             sendPhotoBtn.classList.add('hidden');
             retakePhotoBtn.classList.add('hidden');
-
-            // New: Show zoom slider again if it's supported
-            if (videoStream) {
-                const capabilities = videoStream.getVideoTracks()[0].getCapabilities();
-                if ('zoom' in capabilities) {
-                    zoomControls.classList.remove('hidden');
-                }
-            }
         });
 
     </script>
