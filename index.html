@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Live Camera Share</title>
+
+    <!-- This script is for Peer-to-Peer communication (WebRTC) -->
+    <script src="https://unpkg.com/peerjs@1.4.7/dist/peerjs.min.js"></script>
+
+    <style>
+        :root {
+            --primary-color: #007bff;
+            --secondary-color: #28a745;
+            --light-gray: #f8f9fa;
+            --dark-gray: #343a40;
+            --danger-color: #dc3545;
+        }
+
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+            background-color: #e9ecef;
+            color: var(--dark-gray);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+            box-sizing: border-box;
+        }
+
+        .app-container {
+            background-color: #ffffff;
+            padding: 2rem;
+            border-radius: 15px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.12);
+            width: 100%;
+            max-width: 500px;
+            text-align: center;
+        }
+
+        h1 {
+            color: var(--primary-color);
+            margin-bottom: 0.5rem;
+        }
+
+        .subtitle {
+            color: #6c757d;
+            margin-bottom: 2rem;
+            font-size: 0.9rem;
+        }
+
+        .media-box {
+            position: relative;
+            background: #000;
+            border-radius: 8px;
+            overflow: hidden;
+            margin-bottom: 1.5rem;
+            min-height: 250px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        video, canvas, #received-image {
+            width: 100%;
+            height: auto;
+            display: block;
+        }
+
+        button {
+            background-color: var(--primary-color);
+            color: white;
+            border: none;
+            padding: 12px 25px;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background-color 0.3s, transform 0.1s;
+            margin: 0.5rem 0.2rem;
+        }
+
+        button:hover {
+            background-color: #0056b3;
+        }
+        
+        button:active {
+            transform: scale(0.98);
+        }
+        
+        button:disabled {
+            background-color: #a0a0a0;
+            cursor: not-allowed;
+        }
+
+        .btn-secondary {
+            background-color: var(--secondary-color);
+        }
+        .btn-secondary:hover {
+            background-color: #218838;
+        }
+        
+        .btn-danger {
+            background-color: #6c757d;
+        }
+        .btn-danger:hover {
+            background-color: #5a6268;
+        }
+        
+        .btn-disconnect {
+            background-color: var(--danger-color);
+        }
+        .btn-disconnect:hover {
+             background-color: #c82333;
+        }
+
+        .hidden {
+            display: none;
+        }
+        
+        .section {
+            margin-top: 2rem;
+            padding-top: 1.5rem;
+            border-top: 1px solid #dee2e6;
+        }
+        
+        #received-photo-container {
+             border: 2px dashed var(--secondary-color);
+             padding: 1rem;
+        }
+        
+        #download-link {
+            display: inline-block;
+            margin-top: 1rem;
+            background-color: var(--secondary-color);
+            color: white;
+            padding: 12px 25px;
+            text-decoration: none;
+            border-radius: 8px;
+            font-weight: bold;
+        }
+        
+        input[type="text"] {
+            width: calc(100% - 24px);
+            padding: 12px;
+            margin-bottom: 1rem;
+            border: 1px solid #ced4da;
+            border-radius: 8px;
+            font-size: 16px;
+        }
+        
+        #room-status {
+            margin-top: 1rem;
+            font-weight: bold;
+            color: var(--primary-color);
+        }
+
+        #zoom-controls {
+            margin-bottom: 1rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 10px;
+        }
+        #zoom-slider {
+             width: 60%;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="app-container">
+        <!-- ROOM CONNECTION VIEW -->
+        <div id="room-view">
+            <h1>Live Camera Share</h1>
+            <p class="subtitle">Create a private room or join a friend's to share photos instantly.</p>
+            <input type="text" id="room-id-input" placeholder="Enter Room ID to Join">
+            <button id="join-room-btn" class="btn-secondary">Join Room</button>
+            <hr style="margin: 1.5rem 0;">
+            <button id="create-room-btn">Create a New Room</button>
+            <p id="room-status"></p>
+        </div>
+        
+        <!-- MAIN APP VIEW -->
+        <div id="app-view" class="hidden">
+            <h1>Photo Share</h1>
+            <p class="subtitle" id="connection-status">Not Connected</p>
+        
+            <!-- Sender's Media Box -->
+            <div class="media-box">
+                <video id="video-feed" autoplay playsinline class="hidden"></video>
+                <canvas id="photo-canvas" class="hidden"></canvas>
+            </div>
+
+            <!-- ZOOM CONTROLS - NEW -->
+            <div id="zoom-controls" class="hidden">
+                <label for="zoom-slider">Zoom</label>
+                <input type="range" id="zoom-slider">
+            </div>
+
+            <div id="sender-controls">
+                <button id="start-camera-btn">1. Start Camera</button>
+                <button id="click-photo-btn" class="hidden">2. Click Photo</button>
+                <button id="send-photo-btn" class="btn-secondary hidden" disabled>3. Send Photo</button>
+                <button id="retake-photo-btn" class="btn-danger hidden">Retake</button>
+            </div>
+
+            <!-- Receiver's Section -->
+            <div id="receiver-section" class="section hidden">
+                 <h2>Received Photo</h2>
+                 <div id="received-photo-container" class="media-box">
+                    <p>Waiting for a photo...</p>
+                    <img id="received-image" class="hidden" alt="Received Photo"/>
+                 </div>
+                 <div id="download-container"></div>
+            </div>
+            
+            <div class="section">
+                 <button id="disconnect-btn" class="btn-disconnect">Disconnect</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // --- PEER JS & GLOBAL VARS ---
+        let peer = null;
+        let conn = null;
+        let videoStream;
+
+        // --- DOM ELEMENTS ---
+        const roomView = document.getElementById('room-view');
+        const appView = document.getElementById('app-view');
+        
+        // Room elements
+        const createRoomBtn = document.getElementById('create-room-btn');
+        const joinRoomBtn = document.getElementById('join-room-btn');
+        const roomIdInput = document.getElementById('room-id-input');
+        const roomStatus = document.getElementById('room-status');
+
+        // App elements
+        const connectionStatus = document.getElementById('connection-status');
+        const startCameraBtn = document.getElementById('start-camera-btn');
+        const videoFeed = document.getElementById('video-feed');
+        const photoCanvas = document.getElementById('photo-canvas');
+        const clickPhotoBtn = document.getElementById('click-photo-btn');
+        const sendPhotoBtn = document.getElementById('send-photo-btn');
+        const retakePhotoBtn = document.getElementById('retake-photo-btn');
+        const disconnectBtn = document.getElementById('disconnect-btn');
+        const zoomControls = document.getElementById('zoom-controls'); // New
+        const zoomSlider = document.getElementById('zoom-slider');   // New
+        
+        // Receiver elements
+        const receiverSection = document.getElementById('receiver-section');
+        const receivedImage = document.getElementById('received-image');
+        const downloadContainer = document.getElementById('download-container');
+        const receivedPhotoContainer = document.getElementById('received-photo-container');
+
+
+        // --- ROOM MANAGEMENT ---
+        
+        createRoomBtn.addEventListener('click', () => {
+            // Generate a random, simple room ID
+            const roomId = `room-${Math.random().toString(36).substr(2, 6)}`;
+            peer = new Peer(roomId);
+            
+            roomStatus.textContent = `Creating room...`;
+
+            peer.on('open', (id) => {
+                roomStatus.innerHTML = `<b>Room Created!</b><br>Your Room ID is: <b style="color: #28a745;">${id}</b><br>Share it with a friend and wait for them to join.`;
+            });
+
+            peer.on('connection', (newConnection) => {
+                conn = newConnection;
+                initializeConnection();
+            });
+            
+            peer.on('error', (err) => {
+                alert('An error occurred with PeerJS: ' + err);
+                resetToRoomView();
+            });
+        });
+
+        joinRoomBtn.addEventListener('click', () => {
+            const roomId = roomIdInput.value.trim();
+            if (!roomId) {
+                alert('Please enter a Room ID to join.');
+                return;
+            }
+            
+            // Create a peer with a random ID
+            peer = new Peer();
+            
+            roomStatus.textContent = 'Joining room...';
+            
+            peer.on('open', () => {
+                conn = peer.connect(roomId);
+                initializeConnection();
+            });
+            
+            peer.on('error', (err) => {
+                alert('An error occurred with PeerJS: ' + err);
+                resetToRoomView();
+            });
+        });
+        
+        // --- CONNECTION LOGIC ---
+
+        function initializeConnection() {
+            conn.on('open', () => {
+                // Switch views
+                roomView.classList.add('hidden');
+                appView.classList.remove('hidden');
+                
+                // Update UI
+                connectionStatus.textContent = `Connected to Peer: ${conn.peer}`;
+                connectionStatus.style.color = 'var(--secondary-color)';
+                sendPhotoBtn.disabled = false;
+            });
+            
+            conn.on('data', (data) => {
+                // This is where the image data is received
+                console.log('Data received!');
+                receiverSection.classList.remove('hidden');
+                receivedPhotoContainer.querySelector('p').classList.add('hidden');
+                
+                receivedImage.src = data;
+                receivedImage.classList.remove('hidden');
+                
+                // Create or update download link
+                downloadContainer.innerHTML = ''; // Clear previous link
+                const a = document.createElement('a');
+                a.href = data;
+                a.download = `shared-photo-${Date.now()}.jpg`;
+                a.id = 'download-link';
+                a.textContent = 'Download Photo';
+                downloadContainer.appendChild(a);
+            });
+            
+            conn.on('close', () => {
+                alert('Connection has been closed.');
+                resetToRoomView();
+            });
+        }
+        
+        disconnectBtn.addEventListener('click', () => {
+            if (conn) conn.close();
+            resetToRoomView();
+        });
+        
+        function resetToRoomView() {
+            if (peer) {
+                peer.destroy();
+                peer = null;
+            }
+            roomView.classList.remove('hidden');
+            appView.classList.add('hidden');
+            roomIdInput.value = '';
+            roomStatus.textContent = '';
+            // Also reset the app view state
+            if (videoStream) {
+                videoStream.getTracks().forEach(track => track.stop());
+            }
+            startCameraBtn.classList.remove('hidden');
+            clickPhotoBtn.classList.add('hidden');
+            sendPhotoBtn.classList.add('hidden');
+            retakePhotoBtn.classList.add('hidden');
+            videoFeed.classList.add('hidden');
+            photoCanvas.classList.add('hidden');
+            receiverSection.classList.add('hidden');
+            zoomControls.classList.add('hidden'); // New
+        }
+
+        // --- CAMERA & SENDING LOGIC ---
+
+        // 1. Start Camera
+        startCameraBtn.addEventListener('click', async () => {
+            try {
+                videoStream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: 'environment' } });
+                videoFeed.srcObject = videoStream;
+                videoFeed.classList.remove('hidden');
+                photoCanvas.classList.add('hidden');
+                
+                startCameraBtn.classList.add('hidden');
+                clickPhotoBtn.classList.remove('hidden');
+                
+                // --- ZOOM FUNCTIONALITY ---
+                const track = videoStream.getVideoTracks()[0];
+                const capabilities = track.getCapabilities();
+
+                // Check if the camera supports zoom
+                if ('zoom' in capabilities) {
+                    zoomControls.classList.remove('hidden');
+                    
+                    // Set slider min, max, step, and value from the camera's capabilities
+                    zoomSlider.min = capabilities.zoom.min;
+                    zoomSlider.max = capabilities.zoom.max;
+                    zoomSlider.step = capabilities.zoom.step;
+                    zoomSlider.value = capabilities.zoom.min; // Start with no zoom
+
+                    // Add event listener to apply zoom when slider changes
+                    zoomSlider.addEventListener('input', () => {
+                        track.applyConstraints({ advanced: [{ zoom: zoomSlider.value }] });
+                    });
+                } else {
+                    console.log('Zoom is not supported on this device.');
+                }
+            } catch (err) {
+                console.error("Camera Error:", err);
+                alert("Could not access camera. Please grant permission and try again.");
+            }
+        });
+        
+        // 2. Click Photo
+        clickPhotoBtn.addEventListener('click', () => {
+            const context = photoCanvas.getContext('2d');
+            photoCanvas.width = videoFeed.videoWidth;
+            photoCanvas.height = videoFeed.videoHeight;
+            context.drawImage(videoFeed, 0, 0, photoCanvas.width, photoCanvas.height);
+            
+            videoFeed.classList.add('hidden');
+            photoCanvas.classList.remove('hidden');
+            
+            clickPhotoBtn.classList.add('hidden');
+            sendPhotoBtn.classList.remove('hidden');
+            retakePhotoBtn.classList.remove('hidden');
+            zoomControls.classList.add('hidden'); // New: Hide zoom slider after taking photo
+        });
+        
+        // 3. Send Photo
+        sendPhotoBtn.addEventListener('click', () => {
+            if (!conn || !conn.open) {
+                alert("Not connected to a peer. Cannot send photo.");
+                return;
+            }
+            
+            // Get image data as a Data URL (jpeg for smaller size)
+            const dataUrl = photoCanvas.toDataURL('image/jpeg', 0.85);
+
+            conn.send(dataUrl);
+            
+            // Provide feedback
+            sendPhotoBtn.textContent = 'Sent!';
+            setTimeout(() => {
+                sendPhotoBtn.textContent = '3. Send Photo';
+            }, 2000);
+        });
+
+        // Retake Photo
+        retakePhotoBtn.addEventListener('click', () => {
+            videoFeed.classList.remove('hidden');
+            photoCanvas.classList.add('hidden');
+            
+            clickPhotoBtn.classList.remove('hidden');
+            sendPhotoBtn.classList.add('hidden');
+            retakePhotoBtn.classList.add('hidden');
+
+            // New: Show zoom slider again if it's supported
+            if (videoStream) {
+                const capabilities = videoStream.getVideoTracks()[0].getCapabilities();
+                if ('zoom' in capabilities) {
+                    zoomControls.classList.remove('hidden');
+                }
+            }
+        });
+
+    </script>
+</body>
+</html>
